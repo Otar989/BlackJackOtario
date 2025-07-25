@@ -1,5 +1,6 @@
-// components/Game.js
-import React, { useState, useEffect } from 'react';
+'use client';
+
+import React, { useState, useEffect, useMemo } from 'react';
 import Card from './Card';
 import Leaderboard from './Leaderboard';
 import {
@@ -10,14 +11,19 @@ import {
   apiLeaderboard,
 } from '../utils/api';
 
-// ------- Вспомогательные функции для блэкджека -------
+// -------- Вспомогательные функции для блэкджека ----------
 function createDeck() {
   const suits = ['♠', '♥', '♦', '♣'];
   const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
   const deck = [];
-  for (const s of suits) for (const r of ranks) deck.push({ rank: r, suit: s });
+  for (const s of suits) {
+    for (const r of ranks) {
+      deck.push({ rank: r, suit: s });
+    }
+  }
   return deck;
 }
+
 function shuffleDeck(deck) {
   const a = [...deck];
   for (let i = a.length - 1; i > 0; i--) {
@@ -26,11 +32,13 @@ function shuffleDeck(deck) {
   }
   return a;
 }
+
 function getCardValue(rank) {
   if (rank === 'A') return 11;
   if (['K', 'Q', 'J'].includes(rank)) return 10;
   return parseInt(rank, 10);
 }
+
 function calculateScore(cards) {
   let total = 0;
   let aces = 0;
@@ -44,7 +52,7 @@ function calculateScore(cards) {
   }
   return total;
 }
-// ------------------------------------------------------
+// ---------------------------------------------------------
 
 export default function Game() {
   const [token, setToken] = useState(null);
@@ -59,7 +67,16 @@ export default function Game() {
   const [gameState, setGameState] = useState('idle'); // idle | playing | finished
   const [message, setMessage] = useState('');
 
-  // ---------- Авторизация ----------
+  // Помним последнюю ставку
+  useEffect(() => {
+    const saved = localStorage.getItem('lastBet');
+    if (saved) setBet(saved);
+  }, []);
+  useEffect(() => {
+    if (bet) localStorage.setItem('lastBet', bet);
+  }, [bet]);
+
+  // Авторизация + первоначальные данные
   useEffect(() => {
     const run = async () => {
       const tg = typeof window !== 'undefined' ? window.Telegram?.WebApp : null;
@@ -70,13 +87,12 @@ export default function Game() {
         telegram_id = u.id;
         username = u.username || u.first_name || `Player${u.id}`;
       } else {
-        // Dev режим в обычном браузере
+        // dev-режим в браузере
         telegram_id = Number(localStorage.getItem('dev_tid')) || Date.now();
         localStorage.setItem('dev_tid', telegram_id);
         username = 'WebUser';
       }
 
-      // 2) Авторизация на сервере
       const auth = await apiAuth(telegram_id, username);
       if (auth?.token) {
         localStorage.setItem('jwt', auth.token);
@@ -86,41 +102,22 @@ export default function Game() {
         console.error('Auth error', auth);
       }
 
-      // 3) Загружаем таблицу лидеров
       const lb = await apiLeaderboard(10);
-      const list = Array.isArray(lb)
-        ? lb
-        : (Array.isArray(lb?.leaderboard) ? lb.leaderboard : []);
-      setLeaderboard(list);
+      setLeaderboard(lb || []);
     };
 
     run();
   }, []);
 
-  // Удобный хелпер для повторной загрузки профиля
+  const playerScore = useMemo(() => calculateScore(playerCards), [playerCards]);
+  const dealerScore = useMemo(() => calculateScore(dealerCards), [dealerCards]);
+
   const refreshUser = async () => {
     try {
       const t = token || localStorage.getItem('jwt');
       if (!t) return;
       const me = await apiMe(t);
-      if (!me?.error) setUser(me);
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  // ---------- БОНУС ----------
-  const claimBonus = async () => {
-    try {
-      const t = token || localStorage.getItem('jwt');
-      if (!t) return;
-      const res = await apiBonus(t);
-      if (res.awarded) {
-        setUser(res.user);
-        setMessage('🎁 Bonus claimed!');
-      } else {
-        setMessage('Bonus already claimed today.');
-      }
+      if (!me.error) setUser(me);
     } catch (e) {
       console.error(e);
     }
@@ -133,17 +130,34 @@ export default function Game() {
     return now - last >= 24 * 60 * 60 * 1000;
   };
 
-  // ---------- ИГРОВАЯ ЛОГИКА ----------
-  function startGame() {
-    const amount = parseInt(bet, 10);
+  const claimBonus = async () => {
+    try {
+      const t = token || localStorage.getItem('jwt');
+      if (!t) return;
+      const res = await apiBonus(t);
+      if (res.awarded) {
+        setUser(res.user);
+        setMessage('🎁 Бонус начислен!');
+      } else {
+        setMessage('Бонус уже был получен сегодня.');
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  function startGame(forceAmount) {
+    const amount = forceAmount ?? parseInt(bet, 10);
     if (!amount || amount <= 0) {
-      setMessage('Enter a valid bet');
+      setMessage('Введите корректную ставку');
       return;
     }
     if (!user || amount > user.coins) {
-      setMessage('Not enough coins');
+      setMessage('Недостаточно монет');
       return;
     }
+
+    setBet(String(amount)); // фиксируем ставку на раздачу
 
     const newDeck = shuffleDeck(createDeck());
     const player = [newDeck.pop(), newDeck.pop()];
@@ -163,7 +177,6 @@ export default function Game() {
     return card;
   }
 
-  // ВАЖНО: этот эндпоинт должен быть на бэкенде
   async function updateCoins(delta) {
     try {
       const t = token || localStorage.getItem('jwt');
@@ -189,11 +202,17 @@ export default function Game() {
     updateCoins(resultDelta).then(async () => {
       await refreshUser();
       const lb = await apiLeaderboard(10);
-      const list = Array.isArray(lb)
-        ? lb
-        : (Array.isArray(lb?.leaderboard) ? lb.leaderboard : []);
-      setLeaderboard(list);
+      setLeaderboard(lb || []);
     });
+  }
+
+  function dealerPlay(currentDealer, currentDeck) {
+    let d = [...currentDealer];
+    let localDeck = [...currentDeck];
+    while (calculateScore(d) < 17) {
+      d.push(localDeck.pop());
+    }
+    return { d, localDeck };
   }
 
   function handleHit() {
@@ -203,17 +222,8 @@ export default function Game() {
     setPlayerCards(newPlayer);
     const score = calculateScore(newPlayer);
     if (score > 21) {
-      endRound(-parseInt(bet, 10), 'Bust! You lose.');
+      endRound(-parseInt(bet, 10), 'Перебор! Вы проиграли.');
     }
-  }
-
-  function dealerPlay(currentDealerCards, currentDeck) {
-    let d = [...currentDealerCards];
-    let localDeck = [...currentDeck];
-    while (calculateScore(d) < 17) {
-      d.push(localDeck.pop());
-    }
-    return { d, localDeck };
   }
 
   function handleStand() {
@@ -230,16 +240,16 @@ export default function Game() {
     let delta = 0;
     let msg = '';
     if (dScore > 21) {
-      msg = 'Dealer busts! You win.';
+      msg = 'Перебор у дилера! Вы выиграли.';
       delta = wager;
     } else if (pScore > dScore) {
-      msg = 'You win!';
+      msg = 'Вы выиграли!';
       delta = wager;
     } else if (pScore < dScore) {
-      msg = 'You lose.';
+      msg = 'Вы проиграли.';
       delta = -wager;
     } else {
-      msg = 'Push (tie).';
+      msg = 'Ничья.';
       delta = 0;
     }
     endRound(delta, msg);
@@ -249,7 +259,7 @@ export default function Game() {
     if (gameState !== 'playing') return;
     const currentBet = parseInt(bet, 10);
     if (!user || currentBet * 2 > user.coins) {
-      setMessage('Not enough coins to double.');
+      setMessage('Недостаточно монет для удвоения.');
       return;
     }
     setBet(String(currentBet * 2));
@@ -260,7 +270,7 @@ export default function Game() {
 
     const score = calculateScore(newPlayer);
     if (score > 21) {
-      endRound(-currentBet * 2, 'Bust! You lose.');
+      endRound(-currentBet * 2, 'Перебор! Вы проиграли.');
       return;
     }
 
@@ -274,16 +284,16 @@ export default function Game() {
     let delta = 0;
     let msg = '';
     if (dScore > 21) {
-      msg = 'Dealer busts! You win.';
+      msg = 'Перебор у дилера! Вы выиграли.';
       delta = currentBet * 2;
     } else if (pScore > dScore) {
-      msg = 'You win!';
+      msg = 'Вы выиграли!';
       delta = currentBet * 2;
     } else if (pScore < dScore) {
-      msg = 'You lose.';
+      msg = 'Вы проиграли.';
       delta = -currentBet * 2;
     } else {
-      msg = 'Push (tie).';
+      msg = 'Ничья.';
       delta = 0;
     }
     endRound(delta, msg);
@@ -293,16 +303,16 @@ export default function Game() {
     if (gameState !== 'playing') return;
     const wager = parseInt(bet, 10);
     const loss = Math.ceil(wager / 2);
-    endRound(-loss, 'You surrendered.');
+    endRound(-loss, 'Вы сдались.');
   }
 
   function playAgain() {
     setGameState('idle');
     setPlayerCards([]);
     setDealerCards([]);
-    setBet('');
     setMessage('');
     setDealerHidden(true);
+    // ставка остаётся — можно нажать «Повторить ставку и раздать»
   }
 
   const coins = user?.coins ?? 0;
@@ -318,13 +328,16 @@ export default function Game() {
             onClick={claimBonus}
             disabled={!canClaimBonus()}
           >
-            {canClaimBonus() ? '+ Bonus' : 'Bonus ✓'}
+            {canClaimBonus() ? 'Бонус +' : 'Бонус ✓'}
           </button>
         </div>
       </div>
 
-      {/* Dealer */}
-      <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
+      {/* Дилер */}
+      <div style={{ textAlign: 'center', marginTop: 8, color: '#aaa' }}>
+        Дилер {dealerHidden ? '(?)' : `(${dealerScore})`}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'center', marginTop: 4 }}>
         {dealerCards.map((c, i) => (
           <div key={i} style={{ marginRight: 8 }}>
             <Card card={c} hidden={dealerHidden && i === 1} />
@@ -332,8 +345,11 @@ export default function Game() {
         ))}
       </div>
 
-      {/* Player */}
-      <div style={{ display: 'flex', justifyContent: 'center', marginTop: 24 }}>
+      {/* Игрок */}
+      <div style={{ textAlign: 'center', marginTop: 16, color: '#aaa' }}>
+        Вы ({playerScore})
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'center', marginTop: 4 }}>
         {playerCards.map((c, i) => (
           <div key={i} style={{ marginRight: 8 }}>
             <Card card={c} />
@@ -348,34 +364,38 @@ export default function Game() {
           <input
             type="number"
             className="bet-input"
-            placeholder="Enter bet"
+            placeholder="Введите ставку"
             value={bet}
-            onChange={e => setBet(e.target.value)}
+            onChange={(e) => setBet(e.target.value)}
             min="1"
           />
-          <button className="btn" onClick={startGame} style={{ marginTop: 12 }}>
-            Start Game
+          <button className="btn" onClick={() => startGame()}>
+            Начать игру
           </button>
         </>
       )}
 
       {gameState === 'playing' && (
         <div className="controls">
-          <button className="btn" onClick={handleHit}>Hit</button>
-          <button className="btn" onClick={handleStand}>Stand</button>
-          <button className="btn" onClick={handleDouble}>Double</button>
-          <button className="btn" onClick={handleSurrender}>Surrender</button>
+          <button className="btn" onClick={handleHit}>Добор</button>
+          <button className="btn" onClick={handleStand}>Стоп</button>
+          <button className="btn" onClick={handleDouble}>Удвоить</button>
+          <button className="btn" onClick={handleSurrender}>Сдаться</button>
         </div>
       )}
 
       {gameState === 'finished' && (
-        <button className="btn" onClick={playAgain} style={{ marginTop: 12 }}>
-          Play Again
-        </button>
+        <div className="controls">
+          <button className="btn" onClick={() => startGame(parseInt(bet, 10))}>
+            Повторить ставку и раздать
+          </button>
+          <button className="btn" onClick={playAgain}>
+            Изменить ставку
+          </button>
+        </div>
       )}
 
-      {/* <- важно: всегда передаём массив */}
-      <Leaderboard leaderboard={Array.isArray(leaderboard) ? leaderboard : []} />
+      <Leaderboard leaderboard={leaderboard} meId={user?.telegram_id} />
     </div>
   );
 }
