@@ -62,7 +62,6 @@ export default function Game() {
   // ---------- Авторизация ----------
   useEffect(() => {
     const run = async () => {
-      // 1) Получаем данные из Telegram, либо делаем dev-режим
       const tg = typeof window !== 'undefined' ? window.Telegram?.WebApp : null;
 
       let telegram_id, username;
@@ -89,7 +88,10 @@ export default function Game() {
 
       // 3) Загружаем таблицу лидеров
       const lb = await apiLeaderboard(10);
-      setLeaderboard(lb || []);
+      const list = Array.isArray(lb)
+        ? lb
+        : (Array.isArray(lb?.leaderboard) ? lb.leaderboard : []);
+      setLeaderboard(list);
     };
 
     run();
@@ -101,7 +103,7 @@ export default function Game() {
       const t = token || localStorage.getItem('jwt');
       if (!t) return;
       const me = await apiMe(t);
-      if (!me.error) setUser(me);
+      if (!me?.error) setUser(me);
     } catch (e) {
       console.error(e);
     }
@@ -187,7 +189,10 @@ export default function Game() {
     updateCoins(resultDelta).then(async () => {
       await refreshUser();
       const lb = await apiLeaderboard(10);
-      setLeaderboard(lb || []);
+      const list = Array.isArray(lb)
+        ? lb
+        : (Array.isArray(lb?.leaderboard) ? lb.leaderboard : []);
+      setLeaderboard(list);
     });
   }
 
@@ -331,7 +336,7 @@ export default function Game() {
       <div style={{ display: 'flex', justifyContent: 'center', marginTop: 24 }}>
         {playerCards.map((c, i) => (
           <div key={i} style={{ marginRight: 8 }}>
-          <Card card={c} />
+            <Card card={c} />
           </div>
         ))}
       </div>
@@ -369,7 +374,8 @@ export default function Game() {
         </button>
       )}
 
-      <Leaderboard leaderboard={leaderboard} />
+      {/* <- важно: всегда передаём массив */}
+      <Leaderboard leaderboard={Array.isArray(leaderboard) ? leaderboard : []} />
     </div>
   );
 }
