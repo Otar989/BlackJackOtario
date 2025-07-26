@@ -1,50 +1,38 @@
 export const API = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
-async function json(reqOrUrl) {
-  const res = await fetch(reqOrUrl);
-  return res.json();
-}
+const j = async (r) => (await fetch(r)).json();
 
-export function apiAuth(initData = '') {
-  return json(
+export const apiAuth = (initData = '', dev = {}) =>
+  j(
     new Request(`${API}/api/auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ init_data: initData }),
-    }),
+      body: JSON.stringify(initData ? { init_data: initData } : dev),
+    })
   );
-}
 
-export function apiMe(token) {
-  return json(
-    new Request(`${API}/api/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    }),
-  );
-}
+export const apiMe = (t) =>
+  j(new Request(`${API}/api/me`, { headers: { Authorization: `Bearer ${t}` } }));
 
-export function apiBonus(token) {
-  return json(
+export const apiBonus = (t) =>
+  j(
     new Request(`${API}/api/bonus`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-    }),
+      headers: { Authorization: `Bearer ${t}` },
+    })
   );
-}
 
-export function apiUpdateCoins(token, delta = 0) {
-  return json(
+export const apiUpdateCoins = (t, d = 0) =>
+  j(
     new Request(`${API}/api/updateCoins`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${t}`,
       },
-      body: JSON.stringify({ delta }),
-    }),
+      body: JSON.stringify({ delta: d }),
+    })
   );
-}
 
-export function apiLeaderboard(limit = 10) {
-  return json(`${API}/api/leaderboard?limit=${limit}`);
-}
+export const apiLeaderboard = (l = 10) =>
+  j(`${API}/api/leaderboard?limit=${l}`);
