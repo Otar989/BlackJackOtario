@@ -1,16 +1,23 @@
 {
-  "name": "blackjack-frontend",
-  "version": "1.0.0",
-  "private": true,
-  "description": "Front‑end of the Telegram Blackjack mini app built with Next.js and React",
+  "name": "blackjack-backend",
+  "version": "1.1.0",
+  "description": "API-сервер для Telegram-мини-приложения Блэкджек",
+  "type": "module",
+  "main": "index.js",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start"
+    "start": "node index.js",
+    "dev": "nodemon index.js"
   },
   "dependencies": {
-    "next": "14.1.0",
-    "react": "18.2.0",
-    "react-dom": "18.2.0"
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.0.0",
+    "helmet": "^7.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
   }
 }
