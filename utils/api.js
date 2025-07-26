@@ -6,7 +6,7 @@ async function json(reqOrUrl) {
   return res.json();
 }
 
-/* ---------- авторизация (initData-JWT) ---------- */
+/* ---------- авторизация ---------- */
 export function apiAuth(initData = '') {
   return json(
     new Request(`${API}/api/auth`, {
@@ -34,6 +34,7 @@ export function apiBonus(token) {
   );
 }
 
+/* ---------- ВОТ ЭТОТ экспорт пропал в логе ---------- */
 export function apiUpdateCoins(token, delta = 0) {
   return json(
     new Request(`${API}/api/updateCoins`, {
