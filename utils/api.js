@@ -1,20 +1,52 @@
 // utils/api.js
-export const API  = process.env.NEXT_PUBLIC_API_BASE_URL
-  || 'https://blackjack-api-mfjp.onrender.com';
+export const API = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
-const json = (r) => r.json();
-
-// 1) проверяем initData, получаем JWT
-export async function apiVerify(initData) {
-  return fetch(`${API}/api/verify`, {
-    method  : 'POST',
-    headers : { 'Content-Type':'application/json' },
-    body    : JSON.stringify({ initData }),
-  }).then(json);
+async function json(req) {
+  const res = await fetch(req);
+  return res.json();
 }
 
-// 2) прочие запросы (ниже используются в Game.js)
-export const apiMe         = (t)         => fetch(`${API}/api/me`,          { headers:{ Authorization:`Bearer ${t}` } }).then(json);
-export const apiBonus      = (t)         => fetch(`${API}/api/bonus`,       { method:'POST', headers:{ Authorization:`Bearer ${t}` } }).then(json);
-export const apiLeaderboard= (n=10)      => fetch(`${API}/api/leaderboard?limit=${n}`).then(json);
-export const apiAuth       = () => ({ error:'use /verify' }); // устарело
+/* --- новый auth --- */
+export function apiAuth(initData = '') {
+  return json(
+    new Request(`${API}/api/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ init_data: initData }),
+    }),
+  );
+}
+
+export function apiMe(token) {
+  return json(
+    new Request(`${API}/api/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  );
+}
+
+export function apiBonus(token) {
+  return json(
+    new Request(`${API}/api/bonus`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  );
+}
+
+export function apiUpdateCoins(token, delta = 0) {
+  return json(
+    new Request(`${API}/api/updateCoins`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ delta }),
+    }),
+  );
+}
+
+export function apiLeaderboard(limit = 10) {
+  return json(`${API}/api/leaderboard?limit=${limit}`);
+}
