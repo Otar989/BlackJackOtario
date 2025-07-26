@@ -11,7 +11,7 @@ import {
   apiUpdateCoins,
 } from '../utils/api';
 
-/* ---------- Утилиты блэкджека ---------- */
+/* ---------- утилиты ---------- */
 const createDeck = () => {
   const suits = ['♠', '♥', '♦', '♣'];
   const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
@@ -19,7 +19,6 @@ const createDeck = () => {
   for (const s of suits) for (const r of ranks) deck.push({ rank: r, suit: s });
   return deck;
 };
-
 const shuffleDeck = (d) => {
   const a = [...d];
   for (let i = a.length - 1; i > 0; i--) {
@@ -28,9 +27,7 @@ const shuffleDeck = (d) => {
   }
   return a;
 };
-
 const getCardValue = (r) => (r === 'A' ? 11 : ['K', 'Q', 'J'].includes(r) ? 10 : parseInt(r, 10));
-
 const calculateScore = (cards) => {
   let total = 0;
   let aces = 0;
@@ -44,7 +41,7 @@ const calculateScore = (cards) => {
   }
   return total;
 };
-/* --------------------------------------- */
+/* -------------------------------- */
 
 export default function Game() {
   const [token, setToken] = useState(null);
@@ -59,7 +56,7 @@ export default function Game() {
   const [gameState, setGameState] = useState('idle');
   const [message, setMessage] = useState('');
 
-  /* ---------- Авторизация ---------- */
+  /* ---------- авторизация ---------- */
   useEffect(() => {
     (async () => {
       const tg = typeof window !== 'undefined' ? window.Telegram?.WebApp : null;
@@ -73,18 +70,18 @@ export default function Game() {
       const lastBet = localStorage.getItem('last_bet');
       if (lastBet) setBet(lastBet);
 
-      const auth = await apiAuth({ initData });
+      const auth = await apiAuth(initData);          // ← здесь передаём строку
       if (auth?.token) {
         localStorage.setItem('jwt', auth.token);
         setToken(auth.token);
         setUser(auth.user);
       }
 
-      const lb = await apiLeaderboard(10);
-      setLeaderboard(lb || []);
+      setLeaderboard(await apiLeaderboard(10));
     })();
   }, []);
 
+  /* ---------- помощь­ники ---------- */
   const refreshUser = async () => {
     const t = token || localStorage.getItem('jwt');
     if (!t) return;
@@ -92,11 +89,8 @@ export default function Game() {
     if (!me.error) setUser(me);
   };
 
-  /* ---------- Бонус ---------- */
-  const canClaimBonus = () => {
-    if (!user?.last_bonus) return true;
-    return new Date() - new Date(user.last_bonus) >= 86400000;
-  };
+  const canClaimBonus = () =>
+    !user?.last_bonus || new Date() - new Date(user.last_bonus) >= 86400000;
 
   const claimBonus = async () => {
     const t = token || localStorage.getItem('jwt');
@@ -108,7 +102,7 @@ export default function Game() {
     } else setMessage('Бонус уже получен сегодня.');
   };
 
-  /* ---------- Игра ---------- */
+  /* ---------- игра ---------- */
   const startGame = (auto = false) => {
     const amount = parseInt(bet, 10);
     if (!amount || amount <= 0) {
@@ -119,7 +113,6 @@ export default function Game() {
       if (!auto) setMessage('Недостаточно монет');
       return;
     }
-
     localStorage.setItem('last_bet', String(amount));
 
     const newDeck = shuffleDeck(createDeck());
@@ -145,14 +138,20 @@ export default function Game() {
     if (data.user) setUser(data.user);
   };
 
-  const endRound = (delta, msg) => {
+  const finish = (wager, pScore, dScore) => {
+    if (dScore > 21) return { delta: wager, msg: 'У дилера перебор! Вы выиграли.' };
+    if (pScore > dScore) return { delta: wager, msg: 'Вы выиграли!' };
+    if (pScore < dScore) return { delta: -wager, msg: 'Вы проиграли.' };
+    return { delta: 0, msg: 'Ничья.' };
+  };
+
+  const endRound = async (delta, msg) => {
     setGameState('finished');
     setDealerHidden(false);
     setMessage(msg);
-    updateCoins(delta).then(async () => {
-      await refreshUser();
-      setLeaderboard(await apiLeaderboard(10));
-    });
+    await updateCoins(delta);
+    await refreshUser();
+    setLeaderboard(await apiLeaderboard(10));
   };
 
   const handleHit = () => {
@@ -168,13 +167,6 @@ export default function Game() {
     const dk = [...deckNow];
     while (calculateScore(dc) < 17) dc.push(dk.pop());
     return { dc, dk };
-  };
-
-  const finish = (wager, pScore, dScore) => {
-    if (dScore > 21) return { delta: wager, msg: 'У дилера перебор! Вы выиграли.' };
-    if (pScore > dScore) return { delta: wager, msg: 'Вы выиграли!' };
-    if (pScore < dScore) return { delta: -wager, msg: 'Вы проиграли.' };
-    return { delta: 0, msg: 'Ничья.' };
   };
 
   const handleStand = () => {
