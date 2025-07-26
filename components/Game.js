@@ -11,270 +11,183 @@ import {
   apiUpdateCoins,
 } from '../utils/api';
 
-const createDeck = () => {
+function createDeck() {
   const suits = ['♠', '♥', '♦', '♣'];
-  const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-  const d = [];
-  for (const s of suits) for (const r of ranks) d.push({ rank: r, suit: s });
-  return d;
-};
-const shuffleDeck = (d) => {
-  const a = [...d];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-};
-const getCardValue = (r) => (r === 'A' ? 11 : ['K', 'Q', 'J'].includes(r) ? 10 : parseInt(r, 10));
-const calculateScore = (cards) => {
-  let total = 0;
-  let aces = 0;
-  for (const c of cards) {
-    total += getCardValue(c.rank);
-    if (c.rank === 'A') aces++;
-  }
-  while (total > 21 && aces) {
-    total -= 10;
-    aces--;
-  }
-  return total;
-};
+  const ranks = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+  const d=[];for(const s of suits)for(const r of ranks)d.push({rank:r,suit:s});return d;
+}
+function shuffleDeck(a){const b=[...a];for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];}return b;}
+function getCardValue(r){if(r==='A')return 11;if(['K','Q','J'].includes(r))return 10;return parseInt(r,10);}
+function calculateScore(cs){let t=0,a=0;for(const c of cs){t+=getCardValue(c.rank);if(c.rank==='A')a++;}while(t>21&&a>0){t-=10;a--;}return t;}
 
-export default function Game() {
-  const [token, setToken] = useState(null);
-  const [user, setUser] = useState(null);
-  const [leaderboard, setLeaderboard] = useState([]);
+export default function Game(){
+  const [token,setToken]=useState(null);
+  const [user,setUser]=useState(null);
+  const [leaderboard,setLeaderboard]=useState([]);
+  const [bet,setBet]=useState('');
+  const [deck,setDeck]=useState([]);
+  const [playerCards,setPlayerCards]=useState([]);
+  const [dealerCards,setDealerCards]=useState([]);
+  const [dealerHidden,setDealerHidden]=useState(true);
+  const [gameState,setGameState]=useState('idle');
+  const [message,setMessage]=useState('');
 
-  const [bet, setBet] = useState('');
-  const [deck, setDeck] = useState([]);
-  const [playerCards, setPlayerCards] = useState([]);
-  const [dealerCards, setDealerCards] = useState([]);
-  const [dealerHidden, setDealerHidden] = useState(true);
-  const [gameState, setGameState] = useState('idle');
-  const [message, setMessage] = useState('');
-
-  useEffect(() => {
-    (async () => {
-      const tg = typeof window !== 'undefined' ? window.Telegram?.WebApp : null;
-      const initData = tg?.initData || '';
-
-      if (!initData) {
-        const fakeId = Number(localStorage.getItem('dev_tid')) || Date.now();
-        localStorage.setItem('dev_tid', fakeId);
+  useEffect(()=>{const run=async()=>{
+      const tg=typeof window!=='undefined'?window.Telegram?.WebApp:null;
+      let initData='';
+      let username='WebUser';
+      if(tg){
+        tg.ready();
+        tg.expand && tg.expand();
+        initData=tg.initData||'';
+        if(initData){
+          const u=tg.initDataUnsafe?.user;
+          if(u){
+            username=u.username||u.first_name||`Player${u.id}`;
+          }
+        }
       }
-
-      const lastBet = localStorage.getItem('last_bet');
-      if (lastBet) setBet(lastBet);
-
-      const auth = await apiAuth(initData);
-      if (auth?.token) {
-        localStorage.setItem('jwt', auth.token);
-        setToken(auth.token);
-        // обновляем реальные данные аккаунта
-        const me = await apiMe(auth.token);
-        setUser(me);
+      if(!initData){
+        const fakeId=Number(localStorage.getItem('dev_tid'))||Date.now();
+        localStorage.setItem('dev_tid',fakeId);
       }
+      const lastBet=localStorage.getItem('last_bet');if(lastBet)setBet(lastBet);
+      const auth=await apiAuth(initData);
+      if(auth?.token){localStorage.setItem('jwt',auth.token);setToken(auth.token);setUser(auth.user);}
+      const lb=await apiLeaderboard(10);setLeaderboard(lb||[]);
+    };run();
+  },[]);
 
-      setLeaderboard(await apiLeaderboard(10));
-    })();
-  }, []);
-
-  const refreshUser = async () => {
-    const t = token || localStorage.getItem('jwt');
-    if (!t) return;
-    const me = await apiMe(t);
-    if (!me.error) setUser(me);
+  const refreshUser=async()=>{
+    const t=token||localStorage.getItem('jwt');if(!t)return;
+    const me=await apiMe(t);if(!me.error)setUser(me);
   };
 
-  const canClaimBonus = () =>
-    !user?.last_bonus || Date.now() - new Date(user.last_bonus).getTime() >= 86400000;
-
-  const claimBonus = async () => {
-    const t = token || localStorage.getItem('jwt');
-    if (!t) return;
-    const res = await apiBonus(t);
-    if (res.awarded) {
-      setUser(res.user);
-      setMessage('🎁 Бонус начислен!');
-    } else setMessage('Бонус уже получен сегодня.');
+  const canClaimBonus=()=>{if(!user?.last_bonus)return true;return new Date()-new Date(user.last_bonus)>=864e5;};
+  const claimBonus=async()=>{
+    const t=token||localStorage.getItem('jwt');if(!t)return;
+    const res=await apiBonus(t);
+    if(res.awarded){setUser(res.user);setMessage('🎁 Бонус начислен!');}else{setMessage('Бонус уже получен сегодня.');}
   };
 
-  const startGame = (auto = false) => {
-    const amount = parseInt(bet, 10);
-    if (!amount || amount <= 0) {
-      if (!auto) setMessage('Введите корректную ставку');
-      return;
-    }
-    if (!user || amount > user.coins) {
-      if (!auto) setMessage('Недостаточно монет');
-      return;
-    }
-    localStorage.setItem('last_bet', String(amount));
-
-    const d = shuffleDeck(createDeck());
+  function startGame(auto=false){
+    const amount=parseInt(bet,10);
+    if(!amount||amount<=0){if(!auto)setMessage('Введите корректную ставку');return;}
+    if(!user||amount>user.coins){if(!auto)setMessage('Недостаточно монет');return;}
+    localStorage.setItem('last_bet',String(amount));
+    const d=shuffleDeck(createDeck());
     setDeck(d);
-    setPlayerCards([d.pop(), d.pop()]);
-    setDealerCards([d.pop(), d.pop()]);
+    setPlayerCards([d.pop(),d.pop()]);
+    setDealerCards([d.pop(),d.pop()]);
     setDealerHidden(true);
     setGameState('playing');
     setMessage('');
-  };
+  }
 
-  const draw = () => {
-    const d = [...deck];
-    const c = d.pop();
-    setDeck(d);
-    return c;
-  };
+  function draw(){const d=[...deck];const c=d.pop();setDeck(d);return c;}
 
-  const afterRound = async (delta, msg) => {
-    setGameState('finished');
-    setDealerHidden(false);
-    setMessage(msg);
-    await apiUpdateCoins(token || localStorage.getItem('jwt'), delta);
-    await refreshUser();
-    setLeaderboard(await apiLeaderboard(10));
-  };
+  async function updateCoins(delta){
+    const t=token||localStorage.getItem('jwt');if(!t)return;
+    const data=await apiUpdateCoins(t,delta);
+    if(data.user)setUser(data.user);
+  }
 
-  const finish = (wager, pScore, dScore) => {
-    if (dScore > 21) return { delta: wager, msg: 'У дилера перебор! Вы выиграли.' };
-    if (pScore > dScore) return { delta: wager, msg: 'Вы выиграли!' };
-    if (pScore < dScore) return { delta: -wager, msg: 'Вы проиграли.' };
-    return { delta: 0, msg: 'Ничья.' };
-  };
+  function endRound(delta,msg){
+    setGameState('finished');setDealerHidden(false);setMessage(msg);
+    updateCoins(delta).then(async()=>{await refreshUser();const lb=await apiLeaderboard(10);setLeaderboard(lb||[]);});
+  }
 
-  const dealerPlay = (d, k) => {
-    const dc = [...d];
-    const dk = [...k];
-    while (calculateScore(dc) < 17) dc.push(dk.pop());
-    return { dc, dk };
-  };
+  function handleHit(){
+    if(gameState!=='playing')return;
+    const c=draw();const p=[...playerCards,c];setPlayerCards(p);
+    if(calculateScore(p)>21)endRound(-parseInt(bet,10),'Перебор! Вы проиграли.');
+  }
 
-  const handleHit = () => {
-    if (gameState !== 'playing') return;
-    const c = draw();
-    const pl = [...playerCards, c];
-    setPlayerCards(pl);
-    if (calculateScore(pl) > 21) afterRound(-parseInt(bet, 10), 'Перебор! Вы проиграли.');
-  };
+  function dealerPlay(dck,dd){let d=[...dck],k=[...dd];while(calculateScore(d)<17)d.push(k.pop());return{d,k};}
 
-  const handleStand = () => {
-    if (gameState !== 'playing') return;
-    const { dc, dk } = dealerPlay(dealerCards, deck);
-    setDealerCards(dc);
-    setDeck(dk);
-    setDealerHidden(false);
+  function handleStand(){
+    if(gameState!=='playing')return;
+    const{d,k}=dealerPlay(dealerCards,deck);setDealerCards(d);setDeck(k);setDealerHidden(false);
+    const pS=calculateScore(playerCards),dS=calculateScore(d),w=parseInt(bet,10);
+    let delta=0,msg='';
+    if(dS>21){msg='У дилера перебор! Вы выиграли.';delta=w;}
+    else if(pS>dS){msg='Вы выиграли!';delta=w;}
+    else if(pS<dS){msg='Вы проиграли.';delta=-w;}
+    else{msg='Ничья.';}
+    endRound(delta,msg);
+  }
 
-    const wager = parseInt(bet, 10);
-    const { delta, msg } = finish(wager, calculateScore(playerCards), calculateScore(dc));
-    afterRound(delta, msg);
-  };
+  function handleDouble(){
+    if(gameState!=='playing')return;
+    const cur=parseInt(bet,10);
+    if(!user||cur*2>user.coins){setMessage('Недостаточно монет для удвоения.');return;}
+    const newBet=cur*2;setBet(String(newBet));localStorage.setItem('last_bet',String(newBet));
+    const c=draw();const p=[...playerCards,c];setPlayerCards(p);
+    if(calculateScore(p)>21){endRound(-newBet,'Перебор! Вы проиграли.');return;}
+    const{d,k}=dealerPlay(dealerCards,deck);setDealerCards(d);setDeck(k);
+    const pS=calculateScore(p),dS=calculateScore(d);let delta=0,msg='';
+    if(dS>21){msg='У дилера перебор! Вы выиграли.';delta=newBet;}
+    else if(pS>dS){msg='Вы выиграли!';delta=newBet;}
+    else if(pS<dS){msg='Вы проиграли.';delta=-newBet;}
+    else{msg='Ничья.';}
+    endRound(delta,msg);
+  }
 
-  const handleDouble = () => {
-    if (gameState !== 'playing') return;
-    const cur = parseInt(bet, 10);
-    if (!user || cur * 2 > user.coins) {
-      setMessage('Недостаточно монет для удвоения.');
-      return;
-    }
-    const newBet = cur * 2;
-    setBet(String(newBet));
-    localStorage.setItem('last_bet', String(newBet));
+  function handleSurrender(){
+    if(gameState!=='playing')return;
+    const w=parseInt(bet,10);endRound(-Math.ceil(w/2),'Вы сдались.');
+  }
 
-    const card = draw();
-    const pl = [...playerCards, card];
-    setPlayerCards(pl);
+  function playAgain(){
+    setGameState('idle');setPlayerCards([]);setDealerCards([]);setMessage('');setDealerHidden(true);
+    const lastBet=localStorage.getItem('last_bet');if(lastBet){setBet(lastBet);setTimeout(()=>startGame(true),150);}
+  }
 
-    if (calculateScore(pl) > 21) {
-      afterRound(-newBet, 'Перебор! Вы проиграли.');
-      return;
-    }
+  const coins=user?.coins??0;
+  const pScore=calculateScore(playerCards);
+  const dScore=calculateScore(dealerCards);
+  const dScoreText=dealerHidden&&dealerCards.length?getCardValue(dealerCards[0].rank):dScore;
 
-    const { dc, dk } = dealerPlay(dealerCards, deck);
-    setDealerCards(dc);
-    setDeck(dk);
-
-    const { delta, msg } = finish(newBet, calculateScore(pl), calculateScore(dc));
-    afterRound(delta, msg);
-  };
-
-  const handleSurrender = () => {
-    if (gameState !== 'playing') return;
-    afterRound(-Math.ceil(parseInt(bet, 10) / 2), 'Вы сдались.');
-  };
-
-  const playAgain = () => {
-    setGameState('idle');
-    setPlayerCards([]);
-    setDealerCards([]);
-    setMessage('');
-    setDealerHidden(true);
-
-    const lastBet = localStorage.getItem('last_bet');
-    if (lastBet) {
-      setBet(lastBet);
-      setTimeout(() => startGame(true), 150);
-    }
-  };
-
-  const coins = user?.coins ?? 0;
-  const playerScore = calculateScore(playerCards);
-  const dealerScore = calculateScore(dealerCards);
-  const dealerShown =
-    dealerHidden && dealerCards.length ? getCardValue(dealerCards[0].rank) : dealerScore;
-
-  return (
+  return(
     <div className="container">
       <div className="header">
         <h1>Блэкджек</h1>
-        <div className="coins">
-          💰 {coins}
+        <div className="coins">💰 {coins}
           <button className="bonus-btn" onClick={claimBonus} disabled={!canClaimBonus()}>
-            {canClaimBonus() ? '+ Бонус' : 'Бонус ✓'}
+            {canClaimBonus()?'+ Бонус':'Бонус ✓'}
           </button>
         </div>
       </div>
 
-      <h3 className="label">Дилер ({dealerShown})</h3>
+      <h3 className="label">Дилер ({dScoreText})</h3>
       <div className="hand">
-        {dealerCards.map((c, i) => (
-          <div key={i} style={{ marginRight: 8 }}>
-            <Card card={c} hidden={dealerHidden && i === 1} />
+        {dealerCards.map((c,i)=>(
+          <div key={i} style={{marginRight:8}}>
+            <Card card={c} hidden={dealerHidden&&i===1}/>
           </div>
         ))}
       </div>
 
-      <h3 className="label">
-        Вы {user ? `(${user.username})` : ''} ({playerScore})
-      </h3>
+      <h3 className="label">Вы {user?`(${user.username})`:''} ({pScore})</h3>
       <div className="hand">
-        {playerCards.map((c, i) => (
-          <div key={i} style={{ marginRight: 8 }}>
-            <Card card={c} />
+        {playerCards.map((c,i)=>(
+          <div key={i} style={{marginRight:8}}>
+            <Card card={c}/>
           </div>
         ))}
       </div>
 
       <div className="message">{message}</div>
 
-      {gameState === 'idle' && (
+      {gameState==='idle'&&(
         <>
-          <input
-            type="number"
-            className="bet-input"
-            placeholder="Введите ставку"
-            value={bet}
-            onChange={(e) => setBet(e.target.value)}
-            min="1"
-          />
-          <button className="btn" onClick={() => startGame(false)} style={{ marginTop: 12 }}>
-            Начать игру
-          </button>
+          <input type="number" className="bet-input" placeholder="Введите ставку"
+                 value={bet} onChange={e=>setBet(e.target.value)} min="1"/>
+          <button className="btn" style={{marginTop:12}} onClick={()=>startGame(false)}>Начать игру</button>
         </>
       )}
 
-      {gameState === 'playing' && (
+      {gameState==='playing'&&(
         <div className="controls">
           <button className="btn" onClick={handleHit}>Ещё</button>
           <button className="btn" onClick={handleStand}>Стоп</button>
@@ -283,25 +196,23 @@ export default function Game() {
         </div>
       )}
 
-      {gameState === 'finished' && (
-        <button className="btn" onClick={playAgain} style={{ marginTop: 12 }}>
-          Играть снова
-        </button>
+      {gameState==='finished'&&(
+        <button className="btn" style={{marginTop:12}} onClick={playAgain}>Играть снова</button>
       )}
 
-      <Leaderboard leaderboard={leaderboard} meId={user?.telegram_id} />
+      <Leaderboard leaderboard={leaderboard} meId={user?.telegram_id}/>
 
       <style jsx>{`
-        .container { max-width: 420px; margin: 0 auto; padding: 16px; color: #fff; }
-        .header { display: flex; justify-content: space-between; align-items: center; }
-        .coins { display: flex; align-items: center; gap: 8px; }
-        .bonus-btn { background: #264653; color: #fff; border: none; border-radius: 6px; padding: 4px 8px; }
-        .hand { display: flex; justify-content: center; margin-top: 12px; }
-        .message { text-align: center; min-height: 24px; margin: 12px 0; }
-        .bet-input { width: 100%; padding: 8px 10px; background: #1a2333; border: 1px solid #2a3242; color: #fff; border-radius: 6px; }
-        .controls { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 12px; }
-        .btn { background: #345bda; color: #fff; border: none; border-radius: 6px; padding: 8px 0; }
-        .label { text-align: center; margin-top: 16px; color: #9aa4b2; }
+        .container{max-width:420px;margin:0 auto;padding:16px;color:#fff;}
+        .header{display:flex;justify-content:space-between;align-items:center;}
+        .coins{display:flex;align-items:center;gap:8px;}
+        .bonus-btn{background:#264653;color:#fff;border:none;border-radius:6px;padding:4px 8px;}
+        .hand{display:flex;justify-content:center;margin-top:12px;}
+        .message{text-align:center;min-height:24px;margin:12px 0;}
+        .bet-input{width:100%;padding:8px 10px;background:#1a2333;border:1px solid #2a3242;color:#fff;border-radius:6px;}
+        .controls{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px;}
+        .btn{background:#345bda;color:#fff;border:none;border-radius:6px;padding:8px 0;}
+        .label{text-align:center;margin-top:16px;color:#9aa4b2;}
       `}</style>
     </div>
   );
