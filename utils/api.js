@@ -1,12 +1,12 @@
 // utils/api.js
 export const API = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
-async function json(req) {
-  const res = await fetch(req);
+async function json(reqOrUrl) {
+  const res = await fetch(reqOrUrl);
   return res.json();
 }
 
-/* --- новый auth --- */
+/* ---------- авторизация (initData-JWT) ---------- */
 export function apiAuth(initData = '') {
   return json(
     new Request(`${API}/api/auth`, {
