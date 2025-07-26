@@ -1,4 +1,3 @@
-// utils/api.js
 export const API = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
 async function json(reqOrUrl) {
