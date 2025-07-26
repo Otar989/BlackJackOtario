@@ -12,44 +12,43 @@ import {
 } from '../utils/api';
 
 /* ---------- Утилиты блэкджека ---------- */
-function createDeck() {
+const createDeck = () => {
   const suits = ['♠', '♥', '♦', '♣'];
   const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
   const deck = [];
   for (const s of suits) for (const r of ranks) deck.push({ rank: r, suit: s });
   return deck;
-}
-function shuffleDeck(deck) {
-  const a = [...deck];
+};
+
+const shuffleDeck = (d) => {
+  const a = [...d];
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
-}
-function getCardValue(rank) {
-  if (rank === 'A') return 11;
-  if (['K', 'Q', 'J'].includes(rank)) return 10;
-  return parseInt(rank, 10);
-}
-function calculateScore(cards) {
+};
+
+const getCardValue = (r) => (r === 'A' ? 11 : ['K', 'Q', 'J'].includes(r) ? 10 : parseInt(r, 10));
+
+const calculateScore = (cards) => {
   let total = 0;
   let aces = 0;
   for (const c of cards) {
     total += getCardValue(c.rank);
     if (c.rank === 'A') aces++;
   }
-  while (total > 21 && aces > 0) {
+  while (total > 21 && aces) {
     total -= 10;
     aces--;
   }
   return total;
-}
+};
 /* --------------------------------------- */
 
 export default function Game() {
   const [token, setToken] = useState(null);
-  const [user, setUser] = useState(null);          // { telegram_id, username, coins, last_bonus }
+  const [user, setUser] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
 
   const [bet, setBet] = useState('');
@@ -57,82 +56,60 @@ export default function Game() {
   const [playerCards, setPlayerCards] = useState([]);
   const [dealerCards, setDealerCards] = useState([]);
   const [dealerHidden, setDealerHidden] = useState(true);
-  const [gameState, setGameState] = useState('idle'); // idle | playing | finished
+  const [gameState, setGameState] = useState('idle');
   const [message, setMessage] = useState('');
 
-  /* ---------- Авторизация и старт ---------- */
+  /* ---------- Авторизация ---------- */
   useEffect(() => {
-    const run = async () => {
+    (async () => {
       const tg = typeof window !== 'undefined' ? window.Telegram?.WebApp : null;
-
-      // initData из Telegram (или пустая строка для dev-режима)
       const initData = tg?.initData || '';
 
-      // dev-режим в обычном браузере: создаём фиктивного пользователя
       if (!initData) {
-        const fakeId = Number(localStorage.getItem('dev_tid')) || Date.now();
-        localStorage.setItem('dev_tid', fakeId);
+        const fake = Number(localStorage.getItem('dev_tid')) || Date.now();
+        localStorage.setItem('dev_tid', fake);
       }
 
-      // восстановить последнюю ставку
       const lastBet = localStorage.getItem('last_bet');
       if (lastBet) setBet(lastBet);
 
-      // авторизация
-      const auth = await apiAuth(initData);
+      const auth = await apiAuth({ initData });
       if (auth?.token) {
         localStorage.setItem('jwt', auth.token);
         setToken(auth.token);
         setUser(auth.user);
-      } else {
-        console.error('Auth error', auth);
       }
 
-      // таблица лидеров
       const lb = await apiLeaderboard(10);
       setLeaderboard(lb || []);
-    };
-
-    run();
+    })();
   }, []);
 
   const refreshUser = async () => {
-    try {
-      const t = token || localStorage.getItem('jwt');
-      if (!t) return;
-      const me = await apiMe(t);
-      if (!me.error) setUser(me);
-    } catch (e) {
-      console.error(e);
-    }
+    const t = token || localStorage.getItem('jwt');
+    if (!t) return;
+    const me = await apiMe(t);
+    if (!me.error) setUser(me);
   };
 
   /* ---------- Бонус ---------- */
   const canClaimBonus = () => {
     if (!user?.last_bonus) return true;
-    const last = new Date(user.last_bonus);
-    const now = new Date();
-    return now - last >= 24 * 60 * 60 * 1000;
+    return new Date() - new Date(user.last_bonus) >= 86400000;
   };
 
   const claimBonus = async () => {
-    try {
-      const t = token || localStorage.getItem('jwt');
-      if (!t) return;
-      const res = await apiBonus(t);
-      if (res.awarded) {
-        setUser(res.user);
-        setMessage('🎁 Бонус начислен!');
-      } else {
-        setMessage('Бонус уже получен сегодня.');
-      }
-    } catch (e) {
-      console.error(e);
-    }
+    const t = token || localStorage.getItem('jwt');
+    if (!t) return;
+    const res = await apiBonus(t);
+    if (res.awarded) {
+      setUser(res.user);
+      setMessage('🎁 Бонус начислен!');
+    } else setMessage('Бонус уже получен сегодня.');
   };
 
-  /* ---------- Игровая логика ---------- */
-  function startGame(auto = false) {
+  /* ---------- Игра ---------- */
+  const startGame = (auto = false) => {
     const amount = parseInt(bet, 10);
     if (!amount || amount <= 0) {
       if (!auto) setMessage('Введите корректную ставку');
@@ -146,147 +123,106 @@ export default function Game() {
     localStorage.setItem('last_bet', String(amount));
 
     const newDeck = shuffleDeck(createDeck());
-    const player = [newDeck.pop(), newDeck.pop()];
-    const dealer = [newDeck.pop(), newDeck.pop()];
     setDeck(newDeck);
-    setPlayerCards(player);
-    setDealerCards(dealer);
+    setPlayerCards([newDeck.pop(), newDeck.pop()]);
+    setDealerCards([newDeck.pop(), newDeck.pop()]);
     setDealerHidden(true);
     setGameState('playing');
     setMessage('');
-  }
+  };
 
-  function draw() {
-    const newDeck = [...deck];
-    const card = newDeck.pop();
-    setDeck(newDeck);
-    return card;
-  }
+  const draw = () => {
+    const d = [...deck];
+    const c = d.pop();
+    setDeck(d);
+    return c;
+  };
 
-  async function updateCoins(delta) {
-    try {
-      const t = token || localStorage.getItem('jwt');
-      if (!t) return;
-      const data = await apiUpdateCoins(t, delta);
-      if (data.user) setUser(data.user);
-    } catch (err) {
-      console.error(err);
-    }
-  }
+  const updateCoins = async (delta) => {
+    const t = token || localStorage.getItem('jwt');
+    if (!t) return;
+    const data = await apiUpdateCoins(t, delta);
+    if (data.user) setUser(data.user);
+  };
 
-  function endRound(resultDelta, resultMessage) {
+  const endRound = (delta, msg) => {
     setGameState('finished');
     setDealerHidden(false);
-    setMessage(resultMessage);
-
-    updateCoins(resultDelta).then(async () => {
+    setMessage(msg);
+    updateCoins(delta).then(async () => {
       await refreshUser();
-      const lb = await apiLeaderboard(10);
-      setLeaderboard(lb || []);
+      setLeaderboard(await apiLeaderboard(10));
     });
-  }
+  };
 
-  function handleHit() {
+  const handleHit = () => {
     if (gameState !== 'playing') return;
     const card = draw();
-    const newPlayer = [...playerCards, card];
-    setPlayerCards(newPlayer);
-    const score = calculateScore(newPlayer);
-    if (score > 21) {
-      endRound(-parseInt(bet, 10), 'Перебор! Вы проиграли.');
-    }
-  }
+    const pl = [...playerCards, card];
+    setPlayerCards(pl);
+    if (calculateScore(pl) > 21) endRound(-parseInt(bet, 10), 'Перебор! Вы проиграли.');
+  };
 
-  function dealerPlay(curDealer, curDeck) {
-    let d = [...curDealer];
-    let localDeck = [...curDeck];
-    while (calculateScore(d) < 17) d.push(localDeck.pop());
-    return { d, localDeck };
-  }
+  const dealerPlay = (d, deckNow) => {
+    const dc = [...d];
+    const dk = [...deckNow];
+    while (calculateScore(dc) < 17) dc.push(dk.pop());
+    return { dc, dk };
+  };
 
-  function handleStand() {
+  const finish = (wager, pScore, dScore) => {
+    if (dScore > 21) return { delta: wager, msg: 'У дилера перебор! Вы выиграли.' };
+    if (pScore > dScore) return { delta: wager, msg: 'Вы выиграли!' };
+    if (pScore < dScore) return { delta: -wager, msg: 'Вы проиграли.' };
+    return { delta: 0, msg: 'Ничья.' };
+  };
+
+  const handleStand = () => {
     if (gameState !== 'playing') return;
-    const { d, localDeck } = dealerPlay(dealerCards, deck);
-    setDealerCards(d);
-    setDeck(localDeck);
+    const { dc, dk } = dealerPlay(dealerCards, deck);
+    setDealerCards(dc);
+    setDeck(dk);
     setDealerHidden(false);
 
-    const pScore = calculateScore(playerCards);
-    const dScore = calculateScore(d);
     const wager = parseInt(bet, 10);
-
-    let delta = 0;
-    let msg = '';
-    if (dScore > 21) {
-      msg = 'У дилера перебор! Вы выиграли.';
-      delta = wager;
-    } else if (pScore > dScore) {
-      msg = 'Вы выиграли!';
-      delta = wager;
-    } else if (pScore < dScore) {
-      msg = 'Вы проиграли.';
-      delta = -wager;
-    } else {
-      msg = 'Ничья.';
-      delta = 0;
-    }
+    const { delta, msg } = finish(wager, calculateScore(playerCards), calculateScore(dc));
     endRound(delta, msg);
-  }
+  };
 
-  function handleDouble() {
+  const handleDouble = () => {
     if (gameState !== 'playing') return;
-    const currentBet = parseInt(bet, 10);
-    if (!user || currentBet * 2 > user.coins) {
+    const cur = parseInt(bet, 10);
+    if (!user || cur * 2 > user.coins) {
       setMessage('Недостаточно монет для удвоения.');
       return;
     }
-    const newBet = currentBet * 2;
+    const newBet = cur * 2;
     setBet(String(newBet));
     localStorage.setItem('last_bet', String(newBet));
 
     const card = draw();
-    const newPlayer = [...playerCards, card];
-    setPlayerCards(newPlayer);
+    const pl = [...playerCards, card];
+    setPlayerCards(pl);
 
-    const score = calculateScore(newPlayer);
-    if (score > 21) {
+    if (calculateScore(pl) > 21) {
       endRound(-newBet, 'Перебор! Вы проиграли.');
       return;
     }
 
-    const { d, localDeck } = dealerPlay(dealerCards, deck);
-    setDealerCards(d);
-    setDeck(localDeck);
+    const { dc, dk } = dealerPlay(dealerCards, deck);
+    setDealerCards(dc);
+    setDeck(dk);
 
-    const pScore = calculateScore(newPlayer);
-    const dScore = calculateScore(d);
-
-    let delta = 0;
-    let msg = '';
-    if (dScore > 21) {
-      msg = 'У дилера перебор! Вы выиграли.';
-      delta = newBet;
-    } else if (pScore > dScore) {
-      msg = 'Вы выиграли!';
-      delta = newBet;
-    } else if (pScore < dScore) {
-      msg = 'Вы проиграли.';
-      delta = -newBet;
-    } else {
-      msg = 'Ничья.';
-      delta = 0;
-    }
+    const { delta, msg } = finish(newBet, calculateScore(pl), calculateScore(dc));
     endRound(delta, msg);
-  }
+  };
 
-  function handleSurrender() {
+  const handleSurrender = () => {
     if (gameState !== 'playing') return;
-    const wager = parseInt(bet, 10);
-    const loss = Math.ceil(wager / 2);
-    endRound(-loss, 'Вы сдались.');
-  }
+    endRound(-Math.ceil(parseInt(bet, 10) / 2), 'Вы сдались.');
+  };
 
-  function playAgain() {
+  const playAgain = () => {
     setGameState('idle');
     setPlayerCards([]);
     setDealerCards([]);
@@ -298,17 +234,14 @@ export default function Game() {
       setBet(lastBet);
       setTimeout(() => startGame(true), 150);
     }
-  }
+  };
 
-  /* ---------- Визуал ---------- */
+  /* ---------- UI ---------- */
   const coins = user?.coins ?? 0;
   const playerScore = calculateScore(playerCards);
   const dealerScore = calculateScore(dealerCards);
-
-  const dealerScoreText =
-    dealerHidden && dealerCards.length > 0
-      ? getCardValue(dealerCards[0].rank)
-      : dealerScore;
+  const dealerShown =
+    dealerHidden && dealerCards.length ? getCardValue(dealerCards[0].rank) : dealerScore;
 
   return (
     <div className="container">
@@ -316,20 +249,13 @@ export default function Game() {
         <h1>Блэкджек</h1>
         <div className="coins">
           💰 {coins}
-          <button
-            className="bonus-btn"
-            onClick={claimBonus}
-            disabled={!canClaimBonus()}
-          >
+          <button className="bonus-btn" onClick={claimBonus} disabled={!canClaimBonus()}>
             {canClaimBonus() ? '+ Бонус' : 'Бонус ✓'}
           </button>
         </div>
       </div>
 
-      {/* Дилер */}
-      <h3 className="label">
-        Дилер ({dealerScoreText})
-      </h3>
+      <h3 className="label">Дилер ({dealerShown})</h3>
       <div className="hand">
         {dealerCards.map((c, i) => (
           <div key={i} style={{ marginRight: 8 }}>
@@ -338,7 +264,6 @@ export default function Game() {
         ))}
       </div>
 
-      {/* Игрок */}
       <h3 className="label">
         Вы {user ? `(${user.username})` : ''} ({playerScore})
       </h3>
@@ -359,7 +284,7 @@ export default function Game() {
             className="bet-input"
             placeholder="Введите ставку"
             value={bet}
-            onChange={e => setBet(e.target.value)}
+            onChange={(e) => setBet(e.target.value)}
             min="1"
           />
           <button className="btn" onClick={() => startGame(false)} style={{ marginTop: 12 }}>
@@ -370,10 +295,18 @@ export default function Game() {
 
       {gameState === 'playing' && (
         <div className="controls">
-          <button className="btn" onClick={handleHit}>Ещё</button>
-          <button className="btn" onClick={handleStand}>Стоп</button>
-          <button className="btn" onClick={handleDouble}>Удвоить</button>
-          <button className="btn" onClick={handleSurrender}>Сдаться</button>
+          <button className="btn" onClick={handleHit}>
+            Ещё
+          </button>
+          <button className="btn" onClick={handleStand}>
+            Стоп
+          </button>
+          <button className="btn" onClick={handleDouble}>
+            Удвоить
+          </button>
+          <button className="btn" onClick={handleSurrender}>
+            Сдаться
+          </button>
         </div>
       )}
 
@@ -385,18 +318,66 @@ export default function Game() {
 
       <Leaderboard leaderboard={leaderboard} meId={user?.telegram_id} />
 
-      {/* стили in-component */}
       <style jsx>{`
-        .container { max-width: 420px; margin: 0 auto; padding: 16px; color: #fff; }
-        .header { display: flex; justify-content: space-between; align-items: center; }
-        .coins { display: flex; align-items: center; gap: 8px; }
-        .bonus-btn { background: #264653; color: #fff; border: none; border-radius: 6px; padding: 4px 8px; }
-        .hand { display: flex; justify-content: center; margin-top: 12px; }
-        .message { text-align: center; min-height: 24px; margin: 12px 0; }
-        .bet-input { width: 100%; padding: 8px 10px; background: #1a2333; border: 1px solid #2a3242; color: #fff; border-radius: 6px; }
-        .controls { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 12px; }
-        .btn { background: #345bda; color: #fff; border: none; border-radius: 6px; padding: 8px 0; }
-        .label { text-align: center; margin-top: 16px; color: #9aa4b2; }
+        .container {
+          max-width: 420px;
+          margin: 0 auto;
+          padding: 16px;
+          color: #fff;
+        }
+        .header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .coins {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .bonus-btn {
+          background: #264653;
+          color: #fff;
+          border: none;
+          border-radius: 6px;
+          padding: 4px 8px;
+        }
+        .hand {
+          display: flex;
+          justify-content: center;
+          margin-top: 12px;
+        }
+        .message {
+          text-align: center;
+          min-height: 24px;
+          margin: 12px 0;
+        }
+        .bet-input {
+          width: 100%;
+          padding: 8px 10px;
+          background: #1a2333;
+          border: 1px solid #2a3242;
+          color: #fff;
+          border-radius: 6px;
+        }
+        .controls {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 8px;
+          margin-top: 12px;
+        }
+        .btn {
+          background: #345bda;
+          color: #fff;
+          border: none;
+          border-radius: 6px;
+          padding: 8px 0;
+        }
+        .label {
+          text-align: center;
+          margin-top: 16px;
+          color: #9aa4b2;
+        }
       `}</style>
     </div>
   );
