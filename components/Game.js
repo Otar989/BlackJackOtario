@@ -11,13 +11,12 @@ import {
   apiUpdateCoins,
 } from '../utils/api';
 
-/* ---------- утилиты ---------- */
 const createDeck = () => {
   const suits = ['♠', '♥', '♦', '♣'];
   const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-  const deck = [];
-  for (const s of suits) for (const r of ranks) deck.push({ rank: r, suit: s });
-  return deck;
+  const d = [];
+  for (const s of suits) for (const r of ranks) d.push({ rank: r, suit: s });
+  return d;
 };
 const shuffleDeck = (d) => {
   const a = [...d];
@@ -41,7 +40,6 @@ const calculateScore = (cards) => {
   }
   return total;
 };
-/* -------------------------------- */
 
 export default function Game() {
   const [token, setToken] = useState(null);
@@ -56,32 +54,32 @@ export default function Game() {
   const [gameState, setGameState] = useState('idle');
   const [message, setMessage] = useState('');
 
-  /* ---------- авторизация ---------- */
   useEffect(() => {
     (async () => {
       const tg = typeof window !== 'undefined' ? window.Telegram?.WebApp : null;
       const initData = tg?.initData || '';
 
       if (!initData) {
-        const fake = Number(localStorage.getItem('dev_tid')) || Date.now();
-        localStorage.setItem('dev_tid', fake);
+        const fakeId = Number(localStorage.getItem('dev_tid')) || Date.now();
+        localStorage.setItem('dev_tid', fakeId);
       }
 
       const lastBet = localStorage.getItem('last_bet');
       if (lastBet) setBet(lastBet);
 
-      const auth = await apiAuth(initData);          // ← здесь передаём строку
+      const auth = await apiAuth(initData);
       if (auth?.token) {
         localStorage.setItem('jwt', auth.token);
         setToken(auth.token);
-        setUser(auth.user);
+        // обновляем реальные данные аккаунта
+        const me = await apiMe(auth.token);
+        setUser(me);
       }
 
       setLeaderboard(await apiLeaderboard(10));
     })();
   }, []);
 
-  /* ---------- помощь­ники ---------- */
   const refreshUser = async () => {
     const t = token || localStorage.getItem('jwt');
     if (!t) return;
@@ -90,7 +88,7 @@ export default function Game() {
   };
 
   const canClaimBonus = () =>
-    !user?.last_bonus || new Date() - new Date(user.last_bonus) >= 86400000;
+    !user?.last_bonus || Date.now() - new Date(user.last_bonus).getTime() >= 86400000;
 
   const claimBonus = async () => {
     const t = token || localStorage.getItem('jwt');
@@ -102,7 +100,6 @@ export default function Game() {
     } else setMessage('Бонус уже получен сегодня.');
   };
 
-  /* ---------- игра ---------- */
   const startGame = (auto = false) => {
     const amount = parseInt(bet, 10);
     if (!amount || amount <= 0) {
@@ -115,10 +112,10 @@ export default function Game() {
     }
     localStorage.setItem('last_bet', String(amount));
 
-    const newDeck = shuffleDeck(createDeck());
-    setDeck(newDeck);
-    setPlayerCards([newDeck.pop(), newDeck.pop()]);
-    setDealerCards([newDeck.pop(), newDeck.pop()]);
+    const d = shuffleDeck(createDeck());
+    setDeck(d);
+    setPlayerCards([d.pop(), d.pop()]);
+    setDealerCards([d.pop(), d.pop()]);
     setDealerHidden(true);
     setGameState('playing');
     setMessage('');
@@ -131,11 +128,13 @@ export default function Game() {
     return c;
   };
 
-  const updateCoins = async (delta) => {
-    const t = token || localStorage.getItem('jwt');
-    if (!t) return;
-    const data = await apiUpdateCoins(t, delta);
-    if (data.user) setUser(data.user);
+  const afterRound = async (delta, msg) => {
+    setGameState('finished');
+    setDealerHidden(false);
+    setMessage(msg);
+    await apiUpdateCoins(token || localStorage.getItem('jwt'), delta);
+    await refreshUser();
+    setLeaderboard(await apiLeaderboard(10));
   };
 
   const finish = (wager, pScore, dScore) => {
@@ -145,28 +144,19 @@ export default function Game() {
     return { delta: 0, msg: 'Ничья.' };
   };
 
-  const endRound = async (delta, msg) => {
-    setGameState('finished');
-    setDealerHidden(false);
-    setMessage(msg);
-    await updateCoins(delta);
-    await refreshUser();
-    setLeaderboard(await apiLeaderboard(10));
+  const dealerPlay = (d, k) => {
+    const dc = [...d];
+    const dk = [...k];
+    while (calculateScore(dc) < 17) dc.push(dk.pop());
+    return { dc, dk };
   };
 
   const handleHit = () => {
     if (gameState !== 'playing') return;
-    const card = draw();
-    const pl = [...playerCards, card];
+    const c = draw();
+    const pl = [...playerCards, c];
     setPlayerCards(pl);
-    if (calculateScore(pl) > 21) endRound(-parseInt(bet, 10), 'Перебор! Вы проиграли.');
-  };
-
-  const dealerPlay = (d, deckNow) => {
-    const dc = [...d];
-    const dk = [...deckNow];
-    while (calculateScore(dc) < 17) dc.push(dk.pop());
-    return { dc, dk };
+    if (calculateScore(pl) > 21) afterRound(-parseInt(bet, 10), 'Перебор! Вы проиграли.');
   };
 
   const handleStand = () => {
@@ -178,7 +168,7 @@ export default function Game() {
 
     const wager = parseInt(bet, 10);
     const { delta, msg } = finish(wager, calculateScore(playerCards), calculateScore(dc));
-    endRound(delta, msg);
+    afterRound(delta, msg);
   };
 
   const handleDouble = () => {
@@ -197,7 +187,7 @@ export default function Game() {
     setPlayerCards(pl);
 
     if (calculateScore(pl) > 21) {
-      endRound(-newBet, 'Перебор! Вы проиграли.');
+      afterRound(-newBet, 'Перебор! Вы проиграли.');
       return;
     }
 
@@ -206,12 +196,12 @@ export default function Game() {
     setDeck(dk);
 
     const { delta, msg } = finish(newBet, calculateScore(pl), calculateScore(dc));
-    endRound(delta, msg);
+    afterRound(delta, msg);
   };
 
   const handleSurrender = () => {
     if (gameState !== 'playing') return;
-    endRound(-Math.ceil(parseInt(bet, 10) / 2), 'Вы сдались.');
+    afterRound(-Math.ceil(parseInt(bet, 10) / 2), 'Вы сдались.');
   };
 
   const playAgain = () => {
@@ -228,7 +218,6 @@ export default function Game() {
     }
   };
 
-  /* ---------- UI ---------- */
   const coins = user?.coins ?? 0;
   const playerScore = calculateScore(playerCards);
   const dealerScore = calculateScore(dealerCards);
@@ -287,18 +276,10 @@ export default function Game() {
 
       {gameState === 'playing' && (
         <div className="controls">
-          <button className="btn" onClick={handleHit}>
-            Ещё
-          </button>
-          <button className="btn" onClick={handleStand}>
-            Стоп
-          </button>
-          <button className="btn" onClick={handleDouble}>
-            Удвоить
-          </button>
-          <button className="btn" onClick={handleSurrender}>
-            Сдаться
-          </button>
+          <button className="btn" onClick={handleHit}>Ещё</button>
+          <button className="btn" onClick={handleStand}>Стоп</button>
+          <button className="btn" onClick={handleDouble}>Удвоить</button>
+          <button className="btn" onClick={handleSurrender}>Сдаться</button>
         </div>
       )}
 
@@ -311,65 +292,16 @@ export default function Game() {
       <Leaderboard leaderboard={leaderboard} meId={user?.telegram_id} />
 
       <style jsx>{`
-        .container {
-          max-width: 420px;
-          margin: 0 auto;
-          padding: 16px;
-          color: #fff;
-        }
-        .header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-        .coins {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-        .bonus-btn {
-          background: #264653;
-          color: #fff;
-          border: none;
-          border-radius: 6px;
-          padding: 4px 8px;
-        }
-        .hand {
-          display: flex;
-          justify-content: center;
-          margin-top: 12px;
-        }
-        .message {
-          text-align: center;
-          min-height: 24px;
-          margin: 12px 0;
-        }
-        .bet-input {
-          width: 100%;
-          padding: 8px 10px;
-          background: #1a2333;
-          border: 1px solid #2a3242;
-          color: #fff;
-          border-radius: 6px;
-        }
-        .controls {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 8px;
-          margin-top: 12px;
-        }
-        .btn {
-          background: #345bda;
-          color: #fff;
-          border: none;
-          border-radius: 6px;
-          padding: 8px 0;
-        }
-        .label {
-          text-align: center;
-          margin-top: 16px;
-          color: #9aa4b2;
-        }
+        .container { max-width: 420px; margin: 0 auto; padding: 16px; color: #fff; }
+        .header { display: flex; justify-content: space-between; align-items: center; }
+        .coins { display: flex; align-items: center; gap: 8px; }
+        .bonus-btn { background: #264653; color: #fff; border: none; border-radius: 6px; padding: 4px 8px; }
+        .hand { display: flex; justify-content: center; margin-top: 12px; }
+        .message { text-align: center; min-height: 24px; margin: 12px 0; }
+        .bet-input { width: 100%; padding: 8px 10px; background: #1a2333; border: 1px solid #2a3242; color: #fff; border-radius: 6px; }
+        .controls { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 12px; }
+        .btn { background: #345bda; color: #fff; border: none; border-radius: 6px; padding: 8px 0; }
+        .label { text-align: center; margin-top: 16px; color: #9aa4b2; }
       `}</style>
     </div>
   );
