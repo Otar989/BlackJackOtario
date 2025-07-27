@@ -1,44 +1,18 @@
-// frontend/utils/api.js
 export const API = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
-async function json(reqOrUrl) {
-  const r = await fetch(reqOrUrl);
-  return r.json();
-}
+async function j(r) { const res = await fetch(r); return res.json(); }
 
-/* ─────────── авторизация ─────────── */
-export function apiAuth({ username }) {
-  return json(new Request(`${API}/api/auth`, {
-    method : 'POST',
-    headers: { 'Content-Type':'application/json' },
-    body   : JSON.stringify({ username }),
+export const apiAuth = (username) =>
+  j(new Request(`${API}/api/auth`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username })
   }));
-}
 
-export function apiMe(token) {
-  return json(new Request(`${API}/api/me`, {
-    headers: { Authorization:`Bearer ${token}` },
-  }));
-}
-
-export function apiBonus(token) {
-  return json(new Request(`${API}/api/bonus`, {
-    method : 'POST',
-    headers: { Authorization:`Bearer ${token}` },
-  }));
-}
-
-export function apiUpdateCoins(token, delta = 0) {
-  return json(new Request(`${API}/api/updateCoins`, {
-    method : 'POST',
-    headers: {
-      'Content-Type':'application/json',
-      Authorization  : `Bearer ${token}`,
-    },
-    body: JSON.stringify({ delta }),
-  }));
-}
-
-export function apiLeaderboard(limit = 10) {
-  return json(`${API}/api/leaderboard?limit=${limit}`);
-}
+export const apiMe = (t) => j(new Request(`${API}/api/me`, { headers:{Authorization:`Bearer ${t}`}}));
+export const apiBonus       = (t) => j(new Request(`${API}/api/bonus`,       {method:'POST', headers:{Authorization:`Bearer ${t}`}}));
+export const apiUpdateCoins = (t,d=0)=> j(new Request(`${API}/api/updateCoins`,{
+  method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${t}`},
+  body:JSON.stringify({delta:d})
+}));
+export const apiLeaderboard = (l=10)=> j(`${API}/api/leaderboard?limit=${l}`);
