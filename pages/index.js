@@ -1,17 +1,16 @@
-import dynamic from 'next/dynamic';
-import Head from 'next/head';
-
-// Dynamically import the Game component to avoid SSR issues with Telegram API
-const Game = dynamic(() => import('../components/Game'), { ssr: false });
+import { useState, useEffect } from 'react';
+import Game from '../components/Game';
+import Login from '../components/Login';
 
 export default function Home() {
-  return (
-    <>
-      <Head>
-        <title>Blackjack Mini App</title>
-        <meta name="viewport" content="initial-scale=1, width=device-width" />
-      </Head>
-      <Game />
-    </>
-  );
+  const [auth, setAuth] = useState(null);
+
+  useEffect(() => {
+    const t = localStorage.getItem('jwt');
+    const u = localStorage.getItem('username');
+    if (t && u) setAuth({ token: t, user: { username: u } });
+  }, []);
+
+  if (!auth) return <Login onSuccess={setAuth} />;
+  return <Game auth={auth} onLogout={() => {localStorage.clear(); setAuth(null);}} />;
 }
